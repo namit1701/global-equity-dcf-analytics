@@ -1,7 +1,6 @@
 import yfinance as yf
 import pandas as pd
 
-# Lexicon-based sentiment scorer without NLTK/regex security blocks
 BULLISH_WORDS = {
     "growth", "surge", "up", "gain", "profit", "bull", "bullish", "record", "high",
     "buy", "outperform", "beat", "rally", "positive", "strong", "boost", "climb",
@@ -14,11 +13,16 @@ BEARISH_WORDS = {
     "layoff", "lawsuit", "investigation", "downgrade", "crisis", "fallout", "sink"
 }
 
+COUNTRY_BENCHMARK_TICKERS = {
+    "🇺🇸 United States": "^GSPC",    # S&P 500
+    "🇮🇳 India": "^BSESN",            # BSE Sensex
+    "🇬🇧 United Kingdom": "^FTSE",    # FTSE 100
+    "🇯🇵 Japan": "^N225",             # Nikkei 225
+    "🇩🇪 Germany": "^GDAXI"          # DAX
+}
+
 
 def calculate_simple_polarity(text: str) -> float:
-    """
-    Calculates a polarity score (-1.0 to +1.0) based on financial lexicon matching.
-    """
     words = text.lower().replace(",", "").replace(".", "").split()
     if not words:
         return 0.0
@@ -33,68 +37,77 @@ def calculate_simple_polarity(text: str) -> float:
     return (pos_count - neg_count) / total_matched
 
 
+def extract_raw_news_list(ticker_symbol: str) -> list:
+    """Safely extracts news dictionary list across different yfinance versions."""
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+        raw_items = ticker.news
+        parsed_articles = []
+
+        if raw_items:
+            for item in raw_items:
+                title, publisher, link = "", "Unknown", "#"
+                if isinstance(item, dict):
+                    content = item.get("content", item)
+                    if isinstance(content, dict):
+                        title = content.get("title", "")
+                        provider = content.get("provider", {})
+                        publisher = provider.get("displayName", "Unknown") if isinstance(provider, dict) else "Unknown"
+                        canonical = content.get("canonicalUrl", {})
+                        link = canonical.get("url", "#") if isinstance(canonical, dict) else "#"
+                    else:
+                        title = item.get("title", "")
+                        publisher = item.get("publisher", "Unknown")
+                        link = item.get("link", "#")
+
+                if title:
+                    polarity = calculate_simple_polarity(title)
+                    label = "Bullish 🟢" if polarity > 0.05 else ("Bearish 🔴" if polarity < -0.05 else "Neutral 🟡")
+                    parsed_articles.append({
+                        "Headline": title,
+                        "Publisher": publisher,
+                        "Polarity Score": round(polarity, 3),
+                        "Sentiment": label,
+                        "Link": link
+                    })
+        return parsed_parsed_articles if 'parsed_parsed_articles' in locals() else parsed_articles
+    except Exception:
+        return []
+
+
+def fetch_country_top_headlines() -> pd.DataFrame:
+    """Fetches the top 3 headlines for each country's benchmark index."""
+    country_headlines = []
+
+    for country, index_ticker in COUNTRY_BENCHMARK_TICKERS.items():
+        articles = extract_raw_news_list(index_ticker)
+        top_3 = articles[:3] if articles else []
+
+        for art in top_3:
+            country_headlines.append({
+                "Country / Region": country,
+                "Headline": art["Headline"],
+                "Publisher": art["Publisher"],
+                "Sentiment": art["Sentiment"],
+                "Polarity": art["Polarity Score"]
+            })
+
+    return pd.DataFrame(country_headlines)
+
+
 def fetch_and_analyze_news_sentiment(ticker_symbol: str) -> dict:
-    """
-    Fetches stock news headlines via yfinance, calculates polarity,
-    and categorizes real-time market sentiment as Bullish, Neutral, or Bearish.
-    """
-    ticker = yf.Ticker(ticker_symbol)
-    news_items = ticker.news if hasattr(ticker, "news") and ticker.news else []
-
-    if not news_items:
-        return {
-            "overall_sentiment": "Neutral 🟡",
-            "average_polarity": 0.0,
-            "bullish_pct": 0.0,
-            "bearish_pct": 0.0,
-            "neutral_pct": 100.0,
-            "articles_table": pd.DataFrame(),
-        }
-
-    articles = []
-    polarity_scores = []
-
-    for item in news_items:
-        title = item.get("title", "") if isinstance(item, dict) else getattr(item, "title", "")
-        publisher = item.get("publisher", "Unknown") if isinstance(item, dict) else getattr(item, "publisher", "Unknown")
-        link = item.get("link", "#") if isinstance(item, dict) else getattr(item, "link", "#")
-
-        if not title:
-            continue
-
-        polarity = calculate_simple_polarity(title)
-        polarity_scores.append(polarity)
-
-        if polarity > 0.05:
-            label = "Bullish 🟢"
-        elif polarity < -0.05:
-            label = "Bearish 🔴"
-        else:
-            label = "Neutral 🟡"
-
-        articles.append({
-            "Headline": title,
-            "Publisher": publisher,
-            "Polarity Score": round(polarity, 3),
-            "Sentiment": label,
-            "Link": link,
-        })
-
+    articles = extract_raw_news_list(ticker_symbol)
     df_articles = pd.DataFrame(articles)
 
-    if polarity_scores:
+    if not df_articles.empty:
+        polarity_scores = df_articles["Polarity Score"].tolist()
         avg_polarity = sum(polarity_scores) / len(polarity_scores)
         total = len(polarity_scores)
         bull_count = sum(1 for p in polarity_scores if p > 0.05)
         bear_count = sum(1 for p in polarity_scores if p < -0.05)
         neu_count = total - (bull_count + bear_count)
 
-        if avg_polarity > 0.05:
-            overall = "Bullish 🟢"
-        elif avg_polarity < -0.05:
-            overall = "Bearish 🔴"
-        else:
-            overall = "Neutral 🟡"
+        overall = "Bullish 🟢" if avg_polarity > 0.05 else ("Bearish 🔴" if avg_polarity < -0.05 else "Neutral 🟡")
 
         return {
             "overall_sentiment": overall,
@@ -113,14 +126,3 @@ def fetch_and_analyze_news_sentiment(ticker_symbol: str) -> dict:
         "neutral_pct": 100.0,
         "articles_table": df_articles,
     }
-
-
-if __name__ == "__main__":
-    test_ticker = "AAPL"
-    print(f"--- Testing Sentiment Engine for {test_ticker} ---")
-    res = fetch_and_analyze_news_sentiment(test_ticker)
-    print("Overall Sentiment:", res["overall_sentiment"])
-    print("Average Polarity Score:", res["average_polarity"])
-    print("Breakdown:", f"Bullish: {res['bullish_pct']}%, Bearish: {res['bearish_pct']}%, Neutral: {res['neutral_pct']}%")
-    if not res["articles_table"].empty:
-        print("\nHeadlines Sample:\n", res["articles_table"][["Headline", "Polarity Score", "Sentiment"]].head())

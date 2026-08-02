@@ -10,9 +10,9 @@ from data_fetcher import fetch_company_overview, fetch_financial_statements
 from dcf_engine import calculate_wacc, run_dcf_model
 from company_comparator import fetch_peer_metrics, apply_relative_valuation_tags, generate_radar_chart
 from analytics import generate_2d_sensitivity_matrix, run_scenario_analysis
-from sentiment import fetch_and_analyze_news_sentiment
+from sentiment import fetch_and_analyze_news_sentiment, fetch_country_top_headlines
 
-# 2. Helper Functions (PASTE HERE)
+# 2. Helper Functions
 def format_currency_scale(value: float) -> str:
     """Formats large monetary numbers into $M, $B, or $T notation."""
     if pd.isna(value) or value is None:
@@ -30,14 +30,13 @@ def format_currency_scale(value: float) -> str:
     else:
         return f"{sign}${abs_val:,.2f}"
 
+
 # 3. Streamlit Page Config & Main Dashboard Code
 st.set_page_config(
     page_title="Global Equity DCF & Sentiment Engine",
     page_icon="⚡",
     layout="wide"
 )
-
-# ... (the rest of your app.py UI code)
 
 # Custom Styling
 st.markdown("""
@@ -149,7 +148,7 @@ else:
         kpi1.metric("Intrinsic Share Price", f"${dcf_results['intrinsic_price']:.2f}", f"{dcf_results['upside_downside_pct']:+.2f}% vs Market")
         kpi2.metric("Market Price", f"${curr_price:.2f}")
         kpi3.metric("Computed WACC", f"{calculated_wacc * 100:.2f}%", f"CAPM Beta: {beta_val:.2f}")
-        kpi4.metric("Enterprise Value", f"${dcf_results['enterprise_value']:.2f}M")
+        kpi4.metric("Enterprise Value", format_currency_scale(dcf_results['enterprise_value'] * 1e6))
 
         st.markdown("---")
 
@@ -257,7 +256,17 @@ else:
 
         st.markdown("---")
 
-        st.subheader("Live News Feed & Article Polarity Breakdown")
+        # Global Top 3 Headlines per Country
+        st.subheader("🌍 Top 3 Headlines Across Global Markets")
+        df_global_news = fetch_country_top_headlines()
+        if not df_global_news.empty:
+            st.dataframe(df_global_news, use_container_width=True)
+        else:
+            st.info("Fetching global market headlines...")
+
+        st.markdown("---")
+
+        st.subheader(f"Live News Feed & Polarity Breakdown: {active_ticker}")
         if not sentiment_res["articles_table"].empty:
             st.dataframe(
                 sentiment_res["articles_table"][["Headline", "Publisher", "Polarity Score", "Sentiment"]],
