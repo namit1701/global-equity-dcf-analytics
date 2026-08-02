@@ -1,3 +1,4 @@
+# 1. Imports at the top
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,12 +12,32 @@ from company_comparator import fetch_peer_metrics, apply_relative_valuation_tags
 from analytics import generate_2d_sensitivity_matrix, run_scenario_analysis
 from sentiment import fetch_and_analyze_news_sentiment
 
-# Page Configuration
+# 2. Helper Functions (PASTE HERE)
+def format_currency_scale(value: float) -> str:
+    """Formats large monetary numbers into $M, $B, or $T notation."""
+    if pd.isna(value) or value is None:
+        return "N/A"
+    
+    abs_val = abs(value)
+    sign = "-" if value < 0 else ""
+    
+    if abs_val >= 1e12:
+        return f"{sign}${abs_val / 1e12:.2f}T"
+    elif abs_val >= 1e9:
+        return f"{sign}${abs_val / 1e9:.2f}B"
+    elif abs_val >= 1e6:
+        return f"{sign}${abs_val / 1e6:.2f}M"
+    else:
+        return f"{sign}${abs_val:,.2f}"
+
+# 3. Streamlit Page Config & Main Dashboard Code
 st.set_page_config(
     page_title="Global Equity DCF & Sentiment Engine",
     page_icon="⚡",
     layout="wide"
 )
+
+# ... (the rest of your app.py UI code)
 
 # Custom Styling
 st.markdown("""
